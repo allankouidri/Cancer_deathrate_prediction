@@ -1,0 +1,528 @@
+---
+title: "Advanced Statistics and Machine learning. Case study: Cancer death rate "
+author: "Allan Kouidri"
+date: "August 2022"
+output:
+  pdf_document: default
+---
+
+# Advanced Statistics and Machine learning
+
+This project aim using the cancer_reg.csv https://data.world/exercises/linear-regression-exercise-1/workspace/file?filename=cancer_reg.csv to predict "TARGET_deathRate". 
+Several models will be use such as ordinary least square, CART and Random Forest, and we will compare them 
+
+
+
+### On this dataset, we first perform an ordinary least square model to explain the target_deathrate variable thanks to the numerical ones.
+
+```{r echo = T, results = 'hide', message=FALSE, warning=FALSE }
+#Importing libraries
+library(knitr)
+library(missMDA)
+library(glmnet)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(VSURF)
+```
+
+```{r}
+#Importing the dataset
+data <- 
+  read.csv(
+    file = "./cancer_reg.csv", 
+    dec = ".", 
+    header = TRUE
+    )
+```
+
+We first have a quick overview of the data sumarry statistic (output table not shown)
+```{r echo = T, results = 'hide'}
+summary(data)
+```
+From  this summary we can see:
+
+(i) We have two character variables: "binnedinc" and "geography". They will be 
+removed as we will work only with numerical ones. 
+
+(ii) We have missing values for three variables: pctsomecol18_24 pctsomecol18_24 
+and pctprivatecoveragealone 
+
+
+
+We will keep only numerical variables.
+
+```{r}
+#Removing variables
+data2 <- data
+data2$binnedinc <- NULL
+data2$geography <- NULL
+```
+
+Now we will impute missing values.
+
+```{r}
+
+data3 <- data2
+data3 <- as.data.frame(imputePCA(data2)$completeObs)
+
+cat('number missing values in data2:',sum(is.na(data2)),'\n')
+cat('number missing values in data3:',sum(is.na(data3)),'\n')
+
+```
+
+
+Let's look for potential outliers
+
+```{r, figures-side, fig.show="hold", out.width="50%"}
+model0 = lm(target_deathrate~.,data = data3)
+plot(model0)
+```
+
+
+Looking at the model0 plot, Residuals vs Fitted, we have some potential 
+outliers: points 282,1221,1366.
+
+We will suppress them.
+
+```{r}
+data4=data3[-c(282,1221,1366),]
+
+```
+
+Let's repeat the step after suppressing the selected observations.
+```{r}
+model0b = lm(target_deathrate~.,data = data4)
+```
+More precisely if we want to see some outliers we should consider the studentized 
+residuals.
+
+```{r}
+Rs=rstudent(model0b)
+plot(model0b$fitted.values, Rs)
+```
+We see several points >2 and <-2 that we would would like to suppress them
+from the studies.
+
+
+```{r}
+#Getting the list of the points to remove
+Rs_df<-(as.data.frame((Rs)))
+row.names(Rs_df)[which(Rs_df>2)]
+row.names(Rs_df)[which(Rs_df< -2)]
+```
+
+```{r}
+# Removing the columns
+data5=data3[-c(1221,1366,282,2646, 31 , 79 , 116 , 122 ,166,  209 , 250 , 254 , 458 , 
+               466 , 469 , 472 , 
+               484 , 495 , 515 , 522 , 537 , 549 , 554 , 562 , 564 , 627 , 666 ,
+               670 , 690 , 727 , 775 , 780 , 786 , 975 , 979 , 1000 , 1076 , 1174
+               , 1204 , 1217 , 1221 , 1236 , 1261 , 1276 , 1297 , 1310 , 1316 ,
+               1390 , 1442 , 1497 , 1513 , 1542 , 1548 , 1856 , 1866 , 1882 , 1884 ,
+               1897 , 1914 , 1958 , 1962 , 2001 , 2016 , 2027 , 2036 , 2040 , 
+               2048 , 2079 , 2135 , 2174 , 2176 , 2267 , 2549 , 2563 , 2587 , 
+               2590 , 2596 , 2598 , 2600 , 2637 , 2673 , 2682 , 2714 , 2726 , 
+               2727 , 2757 , 2810 , 2812 , 2819 , 2825 , 2842 , 2858 , 3022 , 
+               3034 , 3036 , 3040 , 34 , 69 , 105 , 119 , 120 , 124 , 176 ,
+               189 , 256 , 264 , 415 , 476 , 514 , 556 , 616 , 621 , 625 , 
+               650 , 748 , 783 , 803 , 812 , 845 , 912 , 913 , 920 , 921 , 
+               925 , 1048 , 1058 , 1059 , 1130 , 1160 , 1195 , 1249 , 1290 , 
+               1311 , 1345 , 1405 , 1429 , 1445 , 1560 , 1568 , 1580 , 1686 ,
+               1701 , 1708 , 1777 , 1797 , 1942 , 1965 , 1969 , 2010 , 2018 ,
+               2051 , 2065 , 2066 , 2307 , 2311 , 2312 , 2318 , 2328 , 2344 , 
+               2351 , 2353 , 2386 , 2404 , 2427 , 2440 , 2444 , 2546 , 2593 , 
+               2626 , 2642 , 2659 , 2661 , 2669 , 2674 , 2696 , 2720 , 2734 , 
+               2741 , 2789 , 2809 , 2822 , 2985 , 2988 ),]
+
+
+```
+
+```{r}
+#number of rows removed
+nrow(data)-nrow(data5)
+```
+Let's check again for potential outliers
+
+```{r}
+model0c = lm(target_deathrate~.,data = data5)
+Rsc=rstudent(model0c)
+plot(model0c$fitted.values, Rsc)
+```
+Based on the plotting of the the studentized residuals, we do not see any 
+potential outliers. We can processed to the modeling. 
+
+
+We split our dataset into train and test.
+
+```{r}
+#Full dataset
+set.seed(seed = 1703)
+splitvector <-
+  sample(
+    x = c("learning", "test"),
+    size = nrow(x = data3),
+    replace = TRUE,
+    prob = c(0.7, 0.3)
+)
+
+learningset3 <- data3[splitvector == "learning", ]
+testset3 <- data3[splitvector == "test", ]
+
+```
+
+
+
+
+```{r}
+#Dataset with outliers removed
+set.seed(seed = 1703)
+splitvector <-
+  sample(
+    x = c("learning", "test"),
+    size = nrow(x = data5),
+    replace = TRUE,
+    prob = c(0.7, 0.3)
+)
+
+learningset5 <- data5[splitvector == "learning", ]
+testset5 <- data5[splitvector == "test", ]
+
+```
+
+
+
+### Ordinary least square lm
+
+We will test OLS models before and after removing potential outliers.
+
+```{r}
+model1 = lm(target_deathrate~.,data = learningset3)
+p1 = predict(model1, newdata = testset3)
+cat('OLS with potential outliers:',sqrt(mean((p1-testset3$target_deathrate)**2)),'\n')
+
+```
+
+```{r}
+model1b = lm(target_deathrate~.,data = learningset5)
+p1b = predict(model1b, newdata = testset5)
+cat('OLS without outliers:',sqrt(mean((p1b-testset5$target_deathrate)**2)),'\n')
+```
+RMSE score after removing  potential outliers is better. We will keep the 
+the learningset5 and testset5 for making futher models. 
+
+
+### Then we perform variable selection by using a step by step method at first and a penalized one then.
+
+- Step by step:
+
+```{r}
+model2=step(model1)
+p2=predict(model2, newdata = testset5)
+
+
+```
+
+```{r}
+cat('Step default parameters:',sqrt(mean((p2-testset5$target_deathrate)^2)),'\n')
+```
+```{r}
+stepforward=stepAIC(lm(target_deathrate~1,data=learningset5), scope=list(upper=model1b, lower=~1),test='F', direction = 'forward')
+```
+
+
+We will perform the step backward to see if it gives us the same final selection of explanatory variables
+```{r}
+stepbackward=stepAIC(model1b, scope = list(upper=model1b,lower=~1),test='F')
+```
+
+
+
+We can see that the list of selected variables for both forward and backward are identical.
+```{r}
+
+model2c = lm(target_deathrate ~ pctbachdeg25_over + incidencerate + povertypercent + 
+    pctotherrace + pcths18_24 + birthrate + medianagemale + pctprivatecoverage + 
+    pcths25_over + pctunemployed16_over + pctmarriedhouseholds + 
+    percentmarried + pctemployed16_over + pctempprivcoverage + 
+    pctwhite + pctnohs18_24 + medincome + pctpubliccoverage + 
+    pctsomecol18_24 + avganncount + avgdeathsperyear + popest2015 + 
+    medianagefemale,data = learningset5)
+p2c= predict(model2c, newdata = testset5)
+
+
+```
+
+```{r}
+cat('Step forward or backward:',sqrt(mean((p2c-testset5$target_deathrate)**2)),'\n')
+```
+
+
+
+### Lasso
+
+```{r}
+# lasso
+x=as.matrix(learningset5[-3])
+y=as.matrix(learningset5[3])
+
+
+```
+
+We determine the best value of lambda by cross validation
+```{r}
+
+tmplasso=cv.glmnet(x,y)
+plot(tmplasso)
+model3=glmnet(x,y,alpha=1,lambda=tmplasso$lambda.1se)
+
+ 
+```
+
+
+
+```{r}
+p3_a=predict(model3, newx = as.matrix(testset5[,-1]), s = tmplasso$lambda.1se)
+
+```
+
+```{r}
+cat('LASSO:',sqrt(mean((p3_a-testset5$target_deathrate)^2)),'\n')
+```
+LASSO should be used only as a variable selection feature :
+Once the feature are selected, you have to estimate an OLS model on the selected feature
+```{r}
+#Selected variables 
+print(model3$beta)
+```
+
+
+```{r}
+model3 = lm(target_deathrate~ avganncount + avgdeathsperyear + incidencerate + 
+              povertypercent + studypercap + medianagemale + medianagefemale +
+              percentmarried + pctsomecol18_24 + pctbachdeg18_24 + pctwhite +
+              pcths18_24 + pcths25_over + pctbachdeg25_over + pctunemployed16_over + 
+              pctprivatecoverage + pctempprivcoverage + pctotherrace + 
+              pctmarriedhouseholds + birthrate, data = learningset5)
+p3_b = predict(model3, newdata = testset5)
+cat('OLS on LASSO selected features:',sqrt(mean((p3_b-testset5$target_deathrate)**2)),'\n')
+```
+
+### We perform also a CART algorithm, a model issue by random forest.
+
+```{r}
+# construction of the maximal tree
+
+model4=rpart(target_deathrate~., data=learningset5, 
+             control = rpart.control(minsplit=2, cp=10^(-15)))
+
+
+```
+
+We make sure we have the maximal tree
+
+```{r}
+Prediction4max=predict(model4)
+err=sum((Prediction4max-learningset5$target_deathrate)^2)
+err
+```
+Since err=0, we obtain the maximal tree
+
+
+Lets perform the pruning step and the final selection
+We get the information about the constructed subtree
+```{r}
+CP= model4$cptable
+CP[1:5,]
+```
+
+```{r}
+#The first thing is to find the smallest CV error
+cvmin=min(CP[,4])
+cvmin
+# and to determin which row it corresponds to
+r=which(CP[,4]==cvmin)
+r
+```
+
+
+Now we will construct the final tree
+```{r}
+#The threshold for the 1-SE rule
+t=CP[r,4]+1*CP[r,5]
+
+z=which(CP[,4]<=t)
+
+z_selected=z[1]
+model4_prune=prune(model4, cp= CP[z_selected,1])
+```
+
+
+```{r}
+p4_b=predict(model4_prune, newdata = testset5)
+cat('CART final tree:',sqrt(mean((p4_b-testset5$target_deathrate)^2)),'\n')
+```
+
+
+### Let's identify thanks to VSURF the subset of interested variables and use this subset to construct a CART tree.
+
+
+ 
+```{r echo = FALSE, autodep = TRUE, cache = TRUE, results = 'hide', message=FALSE, warning=FALSE }
+# VSURF with default parameters
+
+tmp=VSURF(x,y)
+
+```
+
+
+```{r, cache = TRUE,autodep = TRUE}
+summary(tmp)
+```
+VSURF allows to perform variable selection by using Random Forest.
+
+It is a two steps procedures:
+
+Step: Suppression of the noisy variables
+
+ -After severals runs of RF, variables are sorted by the RF variable
+ importance (VI). 
+ 
+ -Variable with small importance are eliminated, using a threshold given by
+ a CART model where the response variable is the sd associated to the VI
+ variables rank and explanatory variable will by the rank of the VI.
+ 
+```{r, warning=FALSE}
+plot(tmp, step = "thres", imp.sd = FALSE, var.names = TRUE)
+```
+The red line corresponds to the threshold value for VI. Only the 
+variables with an averaged VI above this level are kept. At this step, 
+only one variable has been eliminated. 
+
+
+```{r}
+number <- c(1:30)
+number[tmp$varselect.thres]
+print(colnames(x)[tmp$varselect.thres])
+```
+However it doesn't mean the remaining variables is the correct subset of variables.
+
+Step 2 : variable selection
+First, We will identify the subset of explanatory variables which gives the model with 
+the lowest OOB (out of bag error). This will the variable selection for
+interpretation.
+
+
+```{r}
+number[tmp$varselect.interp]
+print(colnames(x)[tmp$varselect.interp])
+```
+We have now 18 variables selected
+
+Finally, we have a step of testing, we want to validate that by adding these
+variables, it is giving us additional information. So we might reduced the 
+number of potential selected variables. This test is based on the decrease 
+of OOB by adding a variable that should by larger than adding the average 
+variation obtained by adding noisy variables.
+
+
+```{r}
+
+number[tmp$varselect.pred]
+print(colnames(x)[tmp$varselect.pred])
+```
+We end up with 15 selected variables. 
+
+
+
+Let's perfom a second CART tree using this subset of selected variables.
+
+
+
+Perform also a CART algorithm, a model issue by random forest.
+
+```{r}
+# construction of the maximal tree
+
+model5=rpart(target_deathrate~incidencerate + pctbachdeg25_over + pcths25_over +
+               medincome + pctemployed16_over + povertypercent + 
+               pctpubliccoveragealone + pctunemployed16_over + pctpubliccoverage 
+             + pctblack + avgdeathsperyear + pctotherrace + medianagefemale + 
+               pctmarriedhouseholds + percentmarried, data=learningset5, 
+             control = rpart.control(minsplit=2, cp=10^(-15)))
+
+
+```
+
+We make sure we have the maximal tree
+
+```{r}
+Tree5max=predict(model5)
+err=sum((Tree5max-learningset5$target_deathrate)^2)
+err
+```
+Since err=0, we obtain the maximal tree
+
+Lets perform the pruning step and the final selection
+We get the information about the constructed subtree
+```{r}
+CP= model5$cptable
+CP[1:5,]
+```
+
+```{r}
+#The first thing is to find the smallest CV error
+cvmin=min(CP[,4])
+cvmin
+# and to determin which row it corresponds to
+r=which(CP[,4]==cvmin)
+r
+```
+
+
+Now we will construct the final tree
+```{r}
+#The threshold for the 1-SE rule
+t=CP[r,4]+1*CP[r,5]
+
+z=which(CP[,4]<=t)
+
+z_selected=z[1]
+model5_pruned=prune(model5, cp= CP[z_selected,1])
+```
+
+
+```{r}
+p5=predict(model5_pruned, newdata = testset5)
+cat('CART + VSURF final tree:',sqrt(mean((p5-testset5$target_deathrate)^2)),'\n')
+
+```
+
+
+
+RandomForest
+
+```{r}
+model6=randomForest(target_deathrate~.,data=learningset5)
+p6=predict(model6, newdata = testset5)
+
+```
+
+
+### Summary of the models
+
+```{r}
+cat('OLS full dataset (numericals):',sqrt(mean((p1-testset3$target_deathrate)**2)),'\n')
+cat('OLS without outliers:',sqrt(mean((p1b-testset5$target_deathrate)**2)),'\n')
+cat('Step default parameters:',sqrt(mean((p2-testset5$target_deathrate)^2)),'\n')
+cat('Step forward or backward:',sqrt(mean((p2c-testset5$target_deathrate)**2)),'\n')
+cat('LASSO:',sqrt(mean((p3_a-testset5$target_deathrate)^2)),'\n')
+cat('OLS on LASSO selected features:',sqrt(mean((p3_b-testset5$target_deathrate)**2)),'\n')
+cat('CART final tree:',sqrt(mean((p4_b-testset5$target_deathrate)^2)),'\n')
+cat('CART + VSURF final tree:',sqrt(mean((p5-testset5$target_deathrate)^2)),'\n')
+cat('Random Forest:',sqrt(mean((p6-testset5$target_deathrate)^2)),'\n')
+```
+According the RMSE, the best model is Random Forest followed by step method forward or backward. 
+
+To improve the analysis k-fold cross-validation could be performed for each model.
